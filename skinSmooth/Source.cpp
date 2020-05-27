@@ -148,4 +148,5 @@ void defineSkin()
     //convert the image to HSV
     //step through every pixel of the patch setting high and low values
     //chromaKeyer lines 191 to 205
+    //then setup inrange function
 }
