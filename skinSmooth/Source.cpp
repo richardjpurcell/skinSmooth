@@ -36,7 +36,11 @@ const std::string caffeWeightFile = "./data/models/res10_300x300_ssd_iter_140000
 const std::string tensorflowConfigFile = "./data/models/opencv_face_detector.pbtxt";
 const std::string tensorflowWeightFile = "./data/models/opencv_face_detector_uint8.pb";
 
+Point topLeft, bottomRight;
+
 void detectFaceOpenCVDNN(Net net, Mat& frameOpenCVDNN);
+void getSampleRegions(Mat& img, vector<Point>& samplePoints);
+void defineSkin();
 
 int main(int argc, char** argv)
 {
@@ -64,6 +68,13 @@ int main(int argc, char** argv)
 #endif
 
     detectFaceOpenCVDNN(net, img);
+
+    vector<Point> sampleRegions;
+    getSampleRegions(img, sampleRegions);
+    cout << sampleRegions.at(0) << endl;
+    cout << sampleRegions.at(1) << endl;
+    cout << sampleRegions.at(2) << endl;
+    cout << sampleRegions.at(3) << endl;
 
     imshow("Image", img);
     waitKey(0);
@@ -96,6 +107,45 @@ void detectFaceOpenCVDNN(Net net, Mat& frameOpenCVDNN)
 
             cv::rectangle(frameOpenCVDNN, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 255, 0),
                 frameHeight / 150, 8);
+
+            topLeft.x = x1;
+            topLeft.y = y1;
+            bottomRight.x = x2;
+            bottomRight.y = y2;
         }
     }
+}
+
+void getSampleRegions(Mat& img, vector<Point>& samplePoints)
+{
+    Point leftCheek, rightCheek, forehead, chin;
+    int diffX = bottomRight.x - topLeft.x;
+    int diffY = bottomRight.y - topLeft.y;
+
+    leftCheek.x = topLeft.x + (int)round(diffX /5.0);
+    leftCheek.y = topLeft.y + (int)round(diffY * (4.0 / 7.0));
+    rightCheek.x = topLeft.x + (int)round(diffX * (4.0 / 5.0));
+    rightCheek.y = topLeft.y + (int)round(diffY * (4.0 / 7.0));
+    forehead.x = topLeft.x + (int)round(diffX / 2.0);
+    forehead.y = topLeft.y + (int)round(diffY * (1.0 / 5.0));
+    chin.x = topLeft.x + (int)round(diffX / 2.0);
+    chin.y = topLeft.y + (int)round(diffY * (15.0 / 16.0));
+    circle(img, leftCheek, 10, Scalar(0, 0, 0), 4);
+    circle(img, rightCheek, 10, Scalar(0, 0, 0), 4);
+    circle(img, forehead, 10, Scalar(0, 0, 0), 4);
+    circle(img, chin, 10, Scalar(0, 0, 0), 4);
+
+    samplePoints.push_back(leftCheek);
+    samplePoints.push_back(rightCheek);
+    samplePoints.push_back(forehead);
+    samplePoints.push_back(chin);
+
+}
+
+void defineSkin()
+{
+    //create a patch around the selected points
+    //convert the image to HSV
+    //step through every pixel of the patch setting high and low values
+    //chromaKeyer lines 191 to 205
 }
