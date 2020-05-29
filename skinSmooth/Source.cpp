@@ -30,6 +30,7 @@ const size_t inHeight = 200;
 const double inScaleFactor = 1.0;
 const float confidenceThreshold = 0.4;
 const cv::Scalar meanVal(104.0, 177.0, 123.0);
+
 const std::string caffeConfigFile = "./data/models/deploy.prototxt";
 const std::string caffeWeightFile = "./data/models/res10_300x300_ssd_iter_140000_fp16.caffemodel";
 
@@ -38,9 +39,12 @@ const std::string tensorflowWeightFile = "./data/models/opencv_face_detector_uin
 
 Point topLeft, bottomRight;
 
+Vec3b skinColorLOW(180, 255, 255), skinColorHIGH(0, 0, 0);
+size_t roiSize = 2;
+
 void detectFaceOpenCVDNN(Net net, Mat& frameOpenCVDNN);
 void getSampleRegions(Mat& img, vector<Point>& samplePoints);
-void defineSkin();
+void defineSkin(Mat& imgHSV, vector<Point> samplePoints);
 
 int main(int argc, char** argv)
 {
@@ -71,10 +75,13 @@ int main(int argc, char** argv)
 
     vector<Point> sampleRegions;
     getSampleRegions(img, sampleRegions);
-    cout << sampleRegions.at(0) << endl;
-    cout << sampleRegions.at(1) << endl;
-    cout << sampleRegions.at(2) << endl;
-    cout << sampleRegions.at(3) << endl;
+
+    Mat imgHSV;
+    cvtColor(img, imgHSV, COLOR_BGR2HSV);
+
+    defineSkin(imgHSV, sampleRegions);
+
+    
 
     imshow("Image", img);
     waitKey(0);
@@ -105,8 +112,8 @@ void detectFaceOpenCVDNN(Net net, Mat& frameOpenCVDNN)
             int x2 = static_cast<int>(detectionMat.at<float>(i, 5) * frameWidth);
             int y2 = static_cast<int>(detectionMat.at<float>(i, 6) * frameHeight);
 
-            cv::rectangle(frameOpenCVDNN, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 255, 0),
-                frameHeight / 150, 8);
+           // cv::rectangle(frameOpenCVDNN, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 255, 0),
+           //     frameHeight / 150, 8);
 
             topLeft.x = x1;
             topLeft.y = y1;
@@ -130,10 +137,10 @@ void getSampleRegions(Mat& img, vector<Point>& samplePoints)
     forehead.y = topLeft.y + (int)round(diffY * (1.0 / 5.0));
     chin.x = topLeft.x + (int)round(diffX / 2.0);
     chin.y = topLeft.y + (int)round(diffY * (15.0 / 16.0));
-    circle(img, leftCheek, 10, Scalar(0, 0, 0), 4);
-    circle(img, rightCheek, 10, Scalar(0, 0, 0), 4);
-    circle(img, forehead, 10, Scalar(0, 0, 0), 4);
-    circle(img, chin, 10, Scalar(0, 0, 0), 4);
+    //circle(img, leftCheek, 10, Scalar(0, 0, 0), 4);
+    //circle(img, rightCheek, 10, Scalar(0, 0, 0), 4);
+    //circle(img, forehead, 10, Scalar(0, 0, 0), 4);
+    //circle(img, chin, 10, Scalar(0, 0, 0), 4);
 
     samplePoints.push_back(leftCheek);
     samplePoints.push_back(rightCheek);
@@ -142,8 +149,44 @@ void getSampleRegions(Mat& img, vector<Point>& samplePoints)
 
 }
 
-void defineSkin()
+void defineSkin(Mat& imgHSV, vector<Point> samplePoints)
 {
+    vector<Mat> splitHSV;
+    split(imgHSV, splitHSV);
+    int q, r;
+    for (int i = 0; i<samplePoints.size(); i++)
+    {
+        for (int m = 0; m < roiSize; m++)
+        {
+            for (int n = 0; n < roiSize; n++)
+            {
+                q = (samplePoints.at(i).x - roiSize / 2.0) + m;
+                r = (samplePoints.at(i).y - roiSize / 2.0) + n;
+                if (splitHSV[0].at<uchar>(q, r) < skinColorLOW[0])
+                    skinColorLOW[0] = splitHSV[0].at<uchar>(q, r);
+                else if (splitHSV[0].at<uchar>(q, r) > skinColorHIGH[0])
+                    skinColorHIGH[0] = splitHSV[0].at<uchar>(q, r);
+                if (splitHSV[1].at<uchar>(q, r) < skinColorLOW[1])
+                    skinColorLOW[1] = splitHSV[1].at<uchar>(q, r);
+                else if (splitHSV[1].at<uchar>(q, r) > skinColorHIGH[1])
+                    skinColorHIGH[1] = splitHSV[1].at<uchar>(q, r);
+                if (splitHSV[2].at<uchar>(q, r) < skinColorLOW[2])
+                    skinColorLOW[2] = splitHSV[2].at<uchar>(q, r);
+                else if (splitHSV[2].at<uchar>(q, r) > skinColorHIGH[2])
+                    skinColorHIGH[2] = splitHSV[2].at<uchar>(q, r);
+            }
+        }
+    }
+
+    cout << skinColorHIGH << endl;
+    cout << skinColorLOW << endl;
+
+    Mat mask = Mat::zeros(Size(imgHSV.cols, imgHSV.rows), CV_8UC1);
+    inRange(imgHSV, skinColorLOW, skinColorHIGH, mask);
+
+    imshow("mask", mask);
+  
+
     //create a patch around the selected points
     //convert the image to HSV
     //step through every pixel of the patch setting high and low values
