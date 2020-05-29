@@ -40,11 +40,12 @@ const std::string tensorflowWeightFile = "./data/models/opencv_face_detector_uin
 Point topLeft, bottomRight;
 
 Vec3b skinColorLOW(180, 255, 255), skinColorHIGH(0, 0, 0);
-size_t roiSize = 2;
+size_t roiSize = 8; //must be an even number
 
 void detectFaceOpenCVDNN(Net net, Mat& frameOpenCVDNN);
 void getSampleRegions(Mat& img, vector<Point>& samplePoints);
 void defineSkin(Mat& imgHSV, vector<Point> samplePoints);
+void processImg(Mat& img, Mat& imgHSV);
 
 int main(int argc, char** argv)
 {
@@ -81,7 +82,7 @@ int main(int argc, char** argv)
 
     defineSkin(imgHSV, sampleRegions);
 
-    
+    processImg(img, imgHSV);
 
     imshow("Image", img);
     waitKey(0);
@@ -178,18 +179,38 @@ void defineSkin(Mat& imgHSV, vector<Point> samplePoints)
         }
     }
 
-    cout << skinColorHIGH << endl;
-    cout << skinColorLOW << endl;
+    cout << "High values are : " << skinColorHIGH << endl;
+    cout << "Low values are : " <<skinColorLOW << endl;
+}
 
-    Mat mask = Mat::zeros(Size(imgHSV.cols, imgHSV.rows), CV_8UC1);
+void processImg(Mat& img, Mat& imgHSV)
+{
+    //create mask
+    Mat mask, maskInvert, maskBlurred, out;
+    out = img.clone();
+    skinColorHIGH[1] = skinColorHIGH[1] - 0;
+    skinColorHIGH[2] = skinColorHIGH[2] - 20;
+    skinColorLOW[1] = skinColorLOW[1] + 0;
+    skinColorLOW[2] = skinColorLOW[2] + 10;
     inRange(imgHSV, skinColorLOW, skinColorHIGH, mask);
+    //blur mask
+    int blurVal01 = 39; //must be an odd number
+    maskInvert = ~mask;
+    GaussianBlur(maskInvert, maskBlurred, Size(blurVal01, blurVal01), 0, 0);
+    //blur skin
+    int blurVal02 = 9; //must be an odd number
+    GaussianBlur(img, out, Size(blurVal02, blurVal02), 0, 0);
+    //blur original image based on mask
+    for (int y = 0; y < out.rows; ++y) {
+        for (int x = 0; x < out.cols; ++x) {
+            Vec3b pixelOrig = out.at<Vec3b>(y, x);
+            Vec3b pixelBG = img.at<Vec3b>(y, x);
+            float blurVal = maskBlurred.at<uchar>(y, x) / 255.0f;
+            Vec3b pixelOut = blurVal * pixelBG + (1.0f - blurVal) * pixelOrig;
 
-    imshow("mask", mask);
-  
+            out.at<Vec3b>(y, x) = pixelOut;
+        }
+    }
 
-    //create a patch around the selected points
-    //convert the image to HSV
-    //step through every pixel of the patch setting high and low values
-    //chromaKeyer lines 191 to 205
-    //then setup inrange function
+    imshow("mask", out);
 }
