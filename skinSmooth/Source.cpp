@@ -1,7 +1,7 @@
 /*
  * File:    skinSmooth.cpp
  * Author:  Richard Purcell 
- * Date:    2020/05/14
+ * Date:    2020/05/26
  * Version: 1.0
  *
  * Purpose: This program smoothes skin tones in an image.
@@ -20,6 +20,16 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/dnn.hpp>
+
+//defines are standins for sliders that could be implemented in the future
+#define ROISIZE 10   //the patch height and width for sampling skin
+#define ERODESIZE 25 //the kernel size used to erode mask
+#define ERODEITER 4  //number of times to iterate through erosion/dilation
+#define HUEADJUST 11 //clamp hue in with positive values or out with negative
+#define SATADJUST 5  //clamp sat in with positive values or out with negative
+#define VALADJUST 5  //clamp val in with positive values or out with negative
+#define MASKBLUR 39  //how much to blur the face mask (odd number only)
+#define FACEBLUR 9   //how much to blur the face (odd number only)
 
 using namespace cv;
 using namespace std;
@@ -40,7 +50,6 @@ const std::string tensorflowWeightFile = "./data/models/opencv_face_detector_uin
 Point topLeft, bottomRight;
 
 Vec3b skinColorLOW(180, 255, 255), skinColorHIGH(0, 0, 0);
-size_t roiSize = 8; //must be an even number
 
 void detectFaceOpenCVDNN(Net net, Mat& frameOpenCVDNN);
 void getSampleRegions(Mat& img, vector<Point>& samplePoints);
@@ -53,9 +62,9 @@ int main(int argc, char** argv)
 
     if (argc != 2)
     {
-        cout << "Usage:chromaKeyer.exe video_path background_path" << endl;
-        cout << "ie:chromaKeyer ./greenscreen-asteroid.mp4 sampleBG1.png" << endl;
-        cout << "Loading default video..." << endl;
+        cout << "Usage:skinSmooth.exe image_path" << endl;
+        cout << "ie:skinSmooth.exe ./hillary_clinton.jpg" << endl;
+        cout << "Loading default image..." << endl;
 
         filename = "./hillary_clinton.jpg";
     }
@@ -84,13 +93,25 @@ int main(int argc, char** argv)
 
     processImg(img, imgHSV);
 
-    imshow("Image", img);
+    imshow("Original Image", img);
+
     waitKey(0);
 
     return 0;
-
 }
 
+/*
+ * Name:        detectFaceOpenCVDNN
+ * Purpose:     detect faces, creating rectangular bounding box
+ * Arguments:   DNN, image to look for faces in
+ * Output:      Upper left point and bottom right point of face bounding box
+ * Modifies:    Point topLeft, bottomRight
+ * Returns:     Void
+ * Assumptions: None.
+ * Bugs:        None.
+ * Notes:       This code is originally from Computer Vision 1, Week 10,
+ *              Deep Learning based Face Detection
+ */
 void detectFaceOpenCVDNN(Net net, Mat& frameOpenCVDNN)
 {
     int frameHeight = frameOpenCVDNN.rows;
@@ -113,8 +134,9 @@ void detectFaceOpenCVDNN(Net net, Mat& frameOpenCVDNN)
             int x2 = static_cast<int>(detectionMat.at<float>(i, 5) * frameWidth);
             int y2 = static_cast<int>(detectionMat.at<float>(i, 6) * frameHeight);
 
-           // cv::rectangle(frameOpenCVDNN, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 255, 0),
-           //     frameHeight / 150, 8);
+            //for testing
+            // cv::rectangle(frameOpenCVDNN, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 255, 0),
+            //     frameHeight / 150, 8);
 
             topLeft.x = x1;
             topLeft.y = y1;
@@ -124,6 +146,17 @@ void detectFaceOpenCVDNN(Net net, Mat& frameOpenCVDNN)
     }
 }
 
+/*
+ * Name:        getSampleRegions
+ * Purpose:     select points on cheeks, forehead, and chin
+ * Arguments:   img, vector of points
+ * Output:      Adds location points to vector for cheeks, forehead, and chin
+ * Modifies:    vector samplePoints
+ * Returns:     Void
+ * Assumptions: None.
+ * Bugs:        None.
+ * Notes:       None.
+ */
 void getSampleRegions(Mat& img, vector<Point>& samplePoints)
 {
     Point leftCheek, rightCheek, forehead, chin;
@@ -150,6 +183,17 @@ void getSampleRegions(Mat& img, vector<Point>& samplePoints)
 
 }
 
+/*
+ * Name:        defineSkin
+ * Purpose:     get high and low HSV values for skin tone
+ * Arguments:   imgHSV, vector of points to sample
+ * Output:      high and low HSV values
+ * Modifies:    Vec3b skinColorLOW, skinColorHIGH
+ * Returns:     Void
+ * Assumptions: None.
+ * Bugs:        None.
+ * Notes:       None.
+ */
 void defineSkin(Mat& imgHSV, vector<Point> samplePoints)
 {
     vector<Mat> splitHSV;
@@ -157,12 +201,12 @@ void defineSkin(Mat& imgHSV, vector<Point> samplePoints)
     int q, r;
     for (int i = 0; i<samplePoints.size(); i++)
     {
-        for (int m = 0; m < roiSize; m++)
+        for (int m = 0; m < ROISIZE; m++)
         {
-            for (int n = 0; n < roiSize; n++)
+            for (int n = 0; n < ROISIZE; n++)
             {
-                q = (samplePoints.at(i).x - roiSize / 2.0) + m;
-                r = (samplePoints.at(i).y - roiSize / 2.0) + n;
+                q = (samplePoints.at(i).x - ROISIZE / 2.0) + m;
+                r = (samplePoints.at(i).y - ROISIZE / 2.0) + n;
                 if (splitHSV[0].at<uchar>(q, r) < skinColorLOW[0])
                     skinColorLOW[0] = splitHSV[0].at<uchar>(q, r);
                 else if (splitHSV[0].at<uchar>(q, r) > skinColorHIGH[0])
@@ -178,28 +222,46 @@ void defineSkin(Mat& imgHSV, vector<Point> samplePoints)
             }
         }
     }
-
-    cout << "High values are : " << skinColorHIGH << endl;
-    cout << "Low values are : " <<skinColorLOW << endl;
+    //for testing
+    //cout << "High values are : " << skinColorHIGH << endl;
+    //cout << "Low values are : " <<skinColorLOW << endl;
 }
 
+/*
+ * Name:        processImg
+ * Purpose:     create mask of skin areas, merge blurred skin with original image
+ * Arguments:   img, imgHSV
+ * Output:      displays final image
+ * Modifies:    None
+ * Returns:     Void
+ * Assumptions: None.
+ * Bugs:        None.
+ * Notes:       None.
+ */
 void processImg(Mat& img, Mat& imgHSV)
 {
     //create mask
     Mat mask, maskInvert, maskBlurred, out;
     out = img.clone();
-    skinColorHIGH[1] = skinColorHIGH[1] - 0;
-    skinColorHIGH[2] = skinColorHIGH[2] - 20;
-    skinColorLOW[1] = skinColorLOW[1] + 0;
-    skinColorLOW[2] = skinColorLOW[2] + 10;
+    skinColorHIGH[0] = skinColorHIGH[0] - HUEADJUST;
+    skinColorHIGH[1] = skinColorHIGH[1] - SATADJUST;
+    skinColorHIGH[2] = skinColorHIGH[2] - VALADJUST;
+    skinColorLOW[0] = skinColorLOW[0] + HUEADJUST;
+    skinColorLOW[1] = skinColorLOW[1] + SATADJUST;
+    skinColorLOW[2] = skinColorLOW[2] + VALADJUST;
     inRange(imgHSV, skinColorLOW, skinColorHIGH, mask);
+
+    //erode and dilate mask
+    Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(ERODESIZE, ERODESIZE));
+    erode(mask, kernel, ERODEITER);
+    dilate(mask, kernel, ERODEITER);
+
     //blur mask
-    int blurVal01 = 39; //must be an odd number
     maskInvert = ~mask;
-    GaussianBlur(maskInvert, maskBlurred, Size(blurVal01, blurVal01), 0, 0);
+    GaussianBlur(maskInvert, maskBlurred, Size(MASKBLUR, MASKBLUR), 0, 0);
+
     //blur skin
-    int blurVal02 = 9; //must be an odd number
-    GaussianBlur(img, out, Size(blurVal02, blurVal02), 0, 0);
+    GaussianBlur(img, out, Size(FACEBLUR, FACEBLUR), 0, 0);
     //blur original image based on mask
     for (int y = 0; y < out.rows; ++y) {
         for (int x = 0; x < out.cols; ++x) {
@@ -207,10 +269,9 @@ void processImg(Mat& img, Mat& imgHSV)
             Vec3b pixelBG = img.at<Vec3b>(y, x);
             float blurVal = maskBlurred.at<uchar>(y, x) / 255.0f;
             Vec3b pixelOut = blurVal * pixelBG + (1.0f - blurVal) * pixelOrig;
-
             out.at<Vec3b>(y, x) = pixelOut;
         }
     }
 
-    imshow("mask", out);
+    imshow("final image", out);
 }
